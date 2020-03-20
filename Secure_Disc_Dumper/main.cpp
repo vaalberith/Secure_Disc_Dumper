@@ -75,9 +75,6 @@ bool GetDriveGeometry(LPWSTR drivepath, DISK_GEOMETRY_EX *pdg)
         NULL);
 
     CloseHandle(hDevice);
-    
-    /*ULARGE_INTEGER ulFreeSpace, ulTotalSpace, ulTotalFreeSpace;
-    bResult = GetDiskFreeSpaceEx(drivepath, &ulFreeSpace, &ulTotalSpace, &ulTotalFreeSpace);*/
 
     return bResult;
 }
@@ -99,6 +96,8 @@ void main()
     
     uint32_t index = 0;
     uint32_t filledindex = 0;
+
+    uint64_t sectors_num = 0;
 
     for (uint32_t i = 0; i < MAX_DISK_NUM; i++)
     {
@@ -128,8 +127,11 @@ void main()
 
     cout << endl << "Selected drive: ";
     wcout << drives[index].DriveName << endl;
-    cout << "Press any key to start." << endl;
-
+    cout << "Enter sector number to read (0 for auto full drive): ";
+    cin >> sectors_num;
+    if (sectors_num == 0)
+        sectors_num = drives[index].SectorNum;
+    cout << endl <<"Press any key to start." << endl;
     _getch();
 
     ofstream outFile(filename, ofstream::binary);
@@ -143,7 +145,7 @@ void main()
 
     SetFilePointerEx(hDisk, ptr_shift_0, &ptr_curr, FILE_BEGIN);
 
-    for (uint32_t i = 0; i < drives[index].SectorNum;)
+    for (uint32_t i = 0; i < sectors_num;)
     {
         ReadFile(hDisk, buf1, READ_BLOCK_SIZE, 0, NULL);
         SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
@@ -165,7 +167,7 @@ void main()
 
         if (i % (SECTOR_SIZE*32) == 0)
         {
-            double percent = i * 100.0 / drives[index].SectorNum;
+            double percent = i * 100.0 / sectors_num;
             cout
                 << internal << left << setfill('0') << setw(7) << percent << " %\t"
                 << "Sector: " << i << "\t"
