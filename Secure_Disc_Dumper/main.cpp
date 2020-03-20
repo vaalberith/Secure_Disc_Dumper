@@ -7,12 +7,13 @@
 
 using namespace std;
 
-#define BLOCK_SIZE 512
+#define SECTOR_SIZE 512
+#define READ_BLOCK_SIZE SECTOR_SIZE*512
 
 #define MAX_DISK_NUM 32
 
-uint8_t buf1[BLOCK_SIZE];
-uint8_t buf2[BLOCK_SIZE];
+uint8_t buf1[READ_BLOCK_SIZE];
+uint8_t buf2[READ_BLOCK_SIZE];
 
 #define DRIVENAME L"\\\\.\\PhysicalDrive"
 
@@ -137,43 +138,43 @@ void main()
 
     LARGE_INTEGER ptr_shift_0 = { 0 };
     LARGE_INTEGER ptr_shift_inv = { 0 };
-    ptr_shift_inv.QuadPart = -BLOCK_SIZE;
+    ptr_shift_inv.QuadPart = -READ_BLOCK_SIZE;
     LARGE_INTEGER ptr_curr = { 0 };
 
     SetFilePointerEx(hDisk, ptr_shift_0, &ptr_curr, FILE_BEGIN);
 
-    for (uint32_t i = 0; i < drives[index].SectorNum; i++)
+    for (uint32_t i = 0; i < drives[index].SectorNum;)
     {
-        ReadFile(hDisk, buf1, BLOCK_SIZE, 0, NULL);
+        ReadFile(hDisk, buf1, READ_BLOCK_SIZE, 0, NULL);
         SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
-        ReadFile(hDisk, buf2, BLOCK_SIZE, 0, NULL);
+        ReadFile(hDisk, buf2, READ_BLOCK_SIZE, 0, NULL);
 
-        if (!arrays_equal(buf1, buf2, BLOCK_SIZE))
+        if (!arrays_equal(buf1, buf2, READ_BLOCK_SIZE))
         {
             cout
                 << "Mismatch!" << "\t"
-                << "Addr: " << hex << ptr_curr.QuadPart << "\t"
-                << "Sector: " << i << endl;
-            i--;
+                << "Sector: " << i << "\t"
+                << "Address: " << hex << ptr_curr.QuadPart << endl;
+                
             SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
             error_count++;
-            Sleep(100);
             continue;
         }
 
-        outFile.write((char*)buf1, BLOCK_SIZE);
+        outFile.write((char*)buf1, READ_BLOCK_SIZE);
 
-        if (i % 1024 == 0)
+        if (i % (SECTOR_SIZE*32) == 0)
         {
             double percent = i * 100.0 / drives[index].SectorNum;
             cout
-                << internal << left << setfill('0') << setw(10) << percent << " %\t"
+                << internal << left << setfill('0') << setw(7) << percent << " %\t"
                 << "Sector: " << i << "\t"
                 << "Address: " << hex << ptr_curr.QuadPart << endl;
         }
 
 
         SetFilePointerEx(hDisk, ptr_shift_0, &ptr_curr, FILE_CURRENT);
+        i += READ_BLOCK_SIZE / SECTOR_SIZE;
     }
 
     outFile.close();
