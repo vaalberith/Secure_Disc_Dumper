@@ -5,6 +5,8 @@
 #include <string>
 #include <iomanip>
 
+#include "resource.h"
+
 using namespace std;
 
 #define SECTOR_SIZE 512
@@ -19,7 +21,7 @@ uint8_t buf2[READ_BLOCK_SIZE];
 
 uint32_t error_count = 0;
 
-bool arrays_equal(uint8_t *ptr1, uint8_t *ptr2, uint32_t len)
+bool arrays_equal_32(uint32_t *ptr1, uint32_t *ptr2, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++)
     {
@@ -48,7 +50,7 @@ LPWSTR concat(LPWSTR str1, string str2)
     return result;
 }
 
-bool GetDriveGeometry(LPWSTR drivepath, DISK_GEOMETRY_EX *pdg)
+bool GetDriveInfo(LPWSTR drivepath, DISK_GEOMETRY_EX* pdg, string* productID)
 {
     HANDLE hDevice = INVALID_HANDLE_VALUE;
     bool bResult = false;
@@ -74,6 +76,38 @@ bool GetDriveGeometry(LPWSTR drivepath, DISK_GEOMETRY_EX *pdg)
         0,
         NULL);
 
+
+    STORAGE_PROPERTY_QUERY storagePropertyQuery;
+    ZeroMemory(&storagePropertyQuery, sizeof(STORAGE_PROPERTY_QUERY));
+    storagePropertyQuery.PropertyId = StorageDeviceProperty;
+    storagePropertyQuery.QueryType = PropertyStandardQuery;
+
+    STORAGE_DESCRIPTOR_HEADER storageDescriptorHeader = { 0 };
+
+    DeviceIoControl(hDevice, 
+        IOCTL_STORAGE_QUERY_PROPERTY,
+        &storagePropertyQuery, sizeof(STORAGE_PROPERTY_QUERY),
+        &storageDescriptorHeader, sizeof(STORAGE_DESCRIPTOR_HEADER),
+        0, 
+        NULL);
+
+
+    const DWORD dwOutBufferSize = storageDescriptorHeader.Size;
+    BYTE* pOutBuffer = new BYTE[storageDescriptorHeader.Size];
+    ZeroMemory(pOutBuffer, storageDescriptorHeader.Size);
+
+
+    DeviceIoControl(hDevice, 
+        IOCTL_STORAGE_QUERY_PROPERTY,
+        &storagePropertyQuery, sizeof(STORAGE_PROPERTY_QUERY),
+        pOutBuffer, dwOutBufferSize,
+        0, 
+        NULL);
+
+    STORAGE_DEVICE_DESCRIPTOR* pDeviceDescriptor = (STORAGE_DEVICE_DESCRIPTOR*)pOutBuffer;
+
+    *productID = string((char*)(pOutBuffer + pDeviceDescriptor->ProductIdOffset));
+
     CloseHandle(hDevice);
 
     return bResult;
@@ -84,6 +118,7 @@ class DriveInfo
 public: 
     LPWSTR DriveName = L"";
     uint64_t SectorNum = 0;
+    string ProductID = "";
 };
 
 void main()
@@ -93,6 +128,7 @@ void main()
     string filename = "dump.img";
 
     DISK_GEOMETRY_EX pdg = { 0 };
+    string productID = "";
     
     uint32_t index = 0;
     uint32_t filledindex = 0;
@@ -102,13 +138,17 @@ void main()
     for (uint32_t i = 0; i < MAX_DISK_NUM; i++)
     {
         LPWSTR tempname = concat(DRIVENAME, to_string(i));
-        if (!GetDriveGeometry(tempname, &pdg))
+
+        if (!GetDriveInfo(tempname, &pdg, &productID))
             break;
         drives[filledindex].DriveName = tempname;
+        drives[filledindex].ProductID = productID;
         drives[filledindex].SectorNum = pdg.Geometry.Cylinders.QuadPart *  pdg.Geometry.TracksPerCylinder * pdg.Geometry.SectorsPerTrack;
-        cout << filledindex << "\t";
-        wcout << drives[filledindex].DriveName;
-        cout << "\tSectors: " << drives[filledindex].SectorNum << endl;
+        cout << left << setw(5) << filledindex;
+        wcout << left << setw(25) << drives[filledindex].DriveName;
+        cout 
+            << left << setw(30) << drives[filledindex].ProductID
+            << "Sectors: " << drives[filledindex].SectorNum << endl;
         filledindex++;
     }
     
@@ -127,11 +167,15 @@ void main()
 
     cout << endl << "Selected drive: ";
     wcout << drives[index].DriveName << endl;
-    cout << "Enter sector number to read (0 for auto full drive): ";
+    cout << "Enter sectors number to read (0 for auto full drive): ";
     cin >> sectors_num;
     if (sectors_num == 0)
         sectors_num = drives[index].SectorNum;
-    cout << endl <<"Press any key to start." << endl;
+    cout
+        << endl << "Sectors number will be read: "
+        << sectors_num << endl
+        << "Press any key to start." << endl;
+
     _getch();
 
     ofstream outFile(filename, ofstream::binary);
@@ -151,12 +195,12 @@ void main()
         SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
         ReadFile(hDisk, buf2, READ_BLOCK_SIZE, 0, NULL);
 
-        if (!arrays_equal(buf1, buf2, READ_BLOCK_SIZE))
+        if (!arrays_equal_32((uint32_t*)buf1, (uint32_t*)buf2, READ_BLOCK_SIZE/sizeof(uint32_t)))
         {
             cout
-                << "Mismatch!" << "\t"
-                << "Sector: " << i << "\t"
-                << "Address: " << hex << ptr_curr.QuadPart << endl;
+                << "Mismatch!\t"
+                << "Sector: " << left << setw(15) << i
+                << "Address: " << left << hex << ptr_curr.QuadPart << endl;
                 
             SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
             error_count++;
@@ -169,9 +213,9 @@ void main()
         {
             double percent = i * 100.0 / sectors_num;
             cout
-                << internal << left << setfill('0') << setw(7) << percent << " %\t"
-                << "Sector: " << i << "\t"
-                << "Address: " << hex << ptr_curr.QuadPart << endl;
+                << right << setw(8) << fixed << setprecision(4) << percent << "%\t"
+                << "Sector: " << left << setw(15) << i
+                << "Address: " << left << hex << ptr_curr.QuadPart << endl;
         }
 
 
