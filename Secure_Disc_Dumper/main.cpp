@@ -109,6 +109,8 @@ void main()
     drive = concat(DRIVENAME, to_string(index));
     wcout << drive << endl;
     
+    cout << "Press any key to start." << endl;
+
     _getch();
 
     ofstream outFile(filename, ofstream::binary);
