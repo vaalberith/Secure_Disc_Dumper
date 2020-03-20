@@ -14,10 +14,9 @@ uint8_t buf1[BLOCK_SIZE];
 uint8_t buf2[BLOCK_SIZE];
 uint8_t buf3[BLOCK_SIZE];
 
-#define DRIVENAME L"\\\\.\\PhysicalDrive4"
+#define DRIVENAME L"\\\\.\\PhysicalDrive"
 
-LPCWSTR drive = DRIVENAME;
-LPWSTR driveI = DRIVENAME;
+LPWSTR drive = DRIVENAME;
 
 uint32_t error_count = 0;
 
@@ -31,40 +30,86 @@ bool arrays_equal(uint8_t *ptr1, uint8_t *ptr2, uint32_t len)
     return true;
 }
 
-void GetDriveGeometry(LPWSTR wszPath, DISK_GEOMETRY *pdg)
+LPWSTR concat(LPWSTR str1, string str2)
 {
-    HANDLE hDevice = INVALID_HANDLE_VALUE;  // handle to the drive to be examined 
-    DWORD junk = 0;                     // discard results
+    LPWSTR str2lpwstr = new wchar_t[str2.size() + 1];
+    for (uint32_t i = 0; i < str2.size(); i++)
+        str2lpwstr[i] = str2[i];
+    str2lpwstr[str2.size()] = 0;
 
-    hDevice = CreateFileW(wszPath,          // drive to open
-        0,                // no access to the drive
-        FILE_SHARE_READ | // share mode
+    wstring w1(str1);
+    wstring w2(str2lpwstr);
+    wstring w3 = w1 + w2;
+
+    LPWSTR result = new wchar_t[w3.size() + 1];
+    for (uint32_t i = 0; i < w3.size(); i++)
+        result[i] = w3[i];
+    result[w3.size()] = 0;
+
+    return result;
+}
+
+bool GetDriveGeometry(LPWSTR drivepath, DISK_GEOMETRY_EX *pdg)
+{
+    HANDLE hDevice = INVALID_HANDLE_VALUE;
+    bool bResult = false;
+
+    hDevice = CreateFileW(drivepath,
+        0,
+        FILE_SHARE_READ |
         FILE_SHARE_WRITE,
-        NULL,             // default security attributes
-        OPEN_EXISTING,    // disposition
-        0,                // file attributes
-        NULL);            // do not copy file attributes
+        NULL,
+        OPEN_EXISTING,
+        0,
+        NULL);
 
-    DeviceIoControl(hDevice,                       // device to be queried
-        IOCTL_DISK_GET_DRIVE_GEOMETRY, // operation to perform
-        NULL, 0,                       // no input buffer
-        pdg, sizeof(*pdg),            // output buffer
-        &junk,                         // # bytes returned
-        (LPOVERLAPPED)NULL);          // synchronous I/O
+    if (hDevice == INVALID_HANDLE_VALUE)
+    {
+        return false;
+    }
+
+    bResult = DeviceIoControl(hDevice,
+        IOCTL_DISK_GET_DRIVE_GEOMETRY,
+        NULL, 0,
+        pdg, sizeof(*pdg),
+        0,
+        NULL);
 
     CloseHandle(hDevice);
+    
+    /*ULARGE_INTEGER ulFreeSpace, ulTotalSpace, ulTotalFreeSpace;
+    bResult = GetDiskFreeSpaceEx(drivepath, &ulFreeSpace, &ulTotalSpace, &ulTotalFreeSpace);*/
+
+    return bResult;
 }
 
 void main()
 {
     uint32_t block_num = 15597568;
 
-    //DISK_GEOMETRY pdg = { 0 };
-    //GetDriveGeometry(driveI, &pdg);
+    DISK_GEOMETRY_EX pdg = { 0 };
+    uint64_t real_sector_num = 0;
+    string filename = "dump.img";
+    uint32_t index = 0;
 
     //block_num = (ULONG)pdg.Cylinders.QuadPart * (ULONG)pdg.TracksPerCylinder * (ULONG)pdg.SectorsPerTrack;
 
-    string filename = "dump.img";
+    for (uint32_t i = 0; i < 32; i++)
+    {
+        drive = concat(DRIVENAME, to_string(i));
+        if (!GetDriveGeometry(drive , &pdg))
+            break;
+        wcout << drive;
+        cout << "\tSectors: " << pdg.Geometry.Cylinders.QuadPart *  pdg.Geometry.TracksPerCylinder * pdg.Geometry.SectorsPerTrack << endl;
+    }
+    cout << "Enter disk index: ";
+    
+    cin >> index;
+    cout << endl << "Selected drive: ";
+    drive = concat(DRIVENAME, to_string(index));
+    wcout << drive << endl;
+    
+    _getch();
 
     ofstream outFile(filename, ofstream::binary);
 
