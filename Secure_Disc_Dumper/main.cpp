@@ -9,14 +9,12 @@ using namespace std;
 
 #define BLOCK_SIZE 512
 
+#define MAX_DISK_NUM 32
 
 uint8_t buf1[BLOCK_SIZE];
 uint8_t buf2[BLOCK_SIZE];
-uint8_t buf3[BLOCK_SIZE];
 
 #define DRIVENAME L"\\\\.\\PhysicalDrive"
-
-LPWSTR drive = DRIVENAME;
 
 uint32_t error_count = 0;
 
@@ -83,39 +81,59 @@ bool GetDriveGeometry(LPWSTR drivepath, DISK_GEOMETRY_EX *pdg)
     return bResult;
 }
 
+class DriveInfo
+{
+public: 
+    LPWSTR DriveName = L"";
+    uint64_t SectorNum = 0;
+};
+
 void main()
 {
-    uint32_t block_num = 15597568;
+    DriveInfo drives[MAX_DISK_NUM];
+
+    string filename = "dump.img";
 
     DISK_GEOMETRY_EX pdg = { 0 };
-    uint64_t real_sector_num = 0;
-    string filename = "dump.img";
+    
     uint32_t index = 0;
+    uint32_t filledindex = 0;
 
-    //block_num = (ULONG)pdg.Cylinders.QuadPart * (ULONG)pdg.TracksPerCylinder * (ULONG)pdg.SectorsPerTrack;
-
-    for (uint32_t i = 0; i < 32; i++)
+    for (uint32_t i = 0; i < MAX_DISK_NUM; i++)
     {
-        drive = concat(DRIVENAME, to_string(i));
-        if (!GetDriveGeometry(drive , &pdg))
+        LPWSTR tempname = concat(DRIVENAME, to_string(i));
+        if (!GetDriveGeometry(tempname, &pdg))
             break;
-        wcout << drive;
-        cout << "\tSectors: " << pdg.Geometry.Cylinders.QuadPart *  pdg.Geometry.TracksPerCylinder * pdg.Geometry.SectorsPerTrack << endl;
+        drives[filledindex].DriveName = tempname;
+        drives[filledindex].SectorNum = pdg.Geometry.Cylinders.QuadPart *  pdg.Geometry.TracksPerCylinder * pdg.Geometry.SectorsPerTrack;
+        cout << filledindex << "\t";
+        wcout << drives[filledindex].DriveName;
+        cout << "\tSectors: " << drives[filledindex].SectorNum << endl;
+        filledindex++;
     }
-    cout << "Enter disk index: ";
     
-    cin >> index;
+    bool err = false;
+    do
+    {
+        err = false;
+        cout << "Enter disk index: ";
+        cin >> index;
+        if (drives[index].DriveName == L"" || drives[index].SectorNum == 0)
+        {
+            err = true;
+            cout << endl << "No such drive!" << endl;
+        }
+    } while (err);
+
     cout << endl << "Selected drive: ";
-    drive = concat(DRIVENAME, to_string(index));
-    wcout << drive << endl;
-    
+    wcout << drives[index].DriveName << endl;
     cout << "Press any key to start." << endl;
 
     _getch();
 
     ofstream outFile(filename, ofstream::binary);
 
-    HANDLE hDisk = CreateFile(drive, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    HANDLE hDisk = CreateFile(drives[index].DriveName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 
     LARGE_INTEGER ptr_shift_0 = { 0 };
     LARGE_INTEGER ptr_shift_inv = { 0 };
@@ -124,7 +142,7 @@ void main()
 
     SetFilePointerEx(hDisk, ptr_shift_0, &ptr_curr, FILE_BEGIN);
 
-    for (uint32_t i = 0; i < block_num; i++)
+    for (uint32_t i = 0; i < drives[index].SectorNum; i++)
     {
         ReadFile(hDisk, buf1, BLOCK_SIZE, 0, NULL);
         SetFilePointerEx(hDisk, ptr_shift_inv, 0, FILE_CURRENT);
@@ -147,7 +165,7 @@ void main()
 
         if (i % 1024 == 0)
         {
-            double percent = i * 100.0 / block_num;
+            double percent = i * 100.0 / drives[index].SectorNum;
             cout
                 << internal << left << setfill('0') << setw(10) << percent << " %\t"
                 << "Sector: " << i << "\t"
